@@ -1,14 +1,14 @@
 import streamlit as st
-import psycopg2
 import pandas as pd
+from sqlalchemy import create_engine
 
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 5434,
-    "dbname": "heartbeat_db",
-    "user": "admin",
-    "password": "admin123"
-}
+DB_URL = "postgresql+psycopg2://admin:admin123@localhost:5434/heartbeat_db"
+
+
+@st.cache_resource
+def get_engine():
+    return create_engine(DB_URL)
+
 
 st.set_page_config(
     page_title="Heartbeat Monitor",
@@ -21,21 +21,34 @@ st.caption("Live data from Kafka pipeline — updates every 3 seconds")
 
 
 def load_recent(limit=200):
-    conn = psycopg2.connect(**DB_CONFIG)
-    df = pd.read_sql("""
-        SELECT customer_id, heart_rate, status, timestamp
-        FROM heartbeats
-        ORDER BY timestamp DESC
-        LIMIT %s
-    """, conn, params=(limit,))
-    conn.close()
+    df = pd.read_sql(
+        "SELECT customer_id, heart_rate, status, timestamp FROM heartbeats ORDER BY timestamp DESC LIMIT %(limit)s",
+        get_engine(),
+        params={"limit": limit},
+    )
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    return df
+
+
+def load_patient_list():
+    return pd.read_sql(
+        "SELECT DISTINCT customer_id, name FROM heartbeats ORDER BY customer_id",
+        get_engine(),
+    )
+
+
+def load_patient_history(customer_id, limit=100):
+    df = pd.read_sql(
+        "SELECT heart_rate, status, timestamp FROM heartbeats WHERE customer_id = %(cid)s ORDER BY timestamp DESC LIMIT %(limit)s",
+        get_engine(),
+        params={"cid": customer_id, "limit": limit},
+    )
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     return df
 
 
 def load_per_customer():
-    conn = psycopg2.connect(**DB_CONFIG)
-    df = pd.read_sql("""
+    return pd.read_sql("""
         SELECT
             customer_id,
             ROUND(AVG(heart_rate)) AS avg_bpm,
@@ -46,9 +59,7 @@ def load_per_customer():
         FROM heartbeats
         GROUP BY customer_id
         ORDER BY anomalies DESC
-    """, conn)
-    conn.close()
-    return df
+    """, get_engine())
 
 
 @st.fragment(run_every=3)
@@ -105,9 +116,57 @@ def tables():
     )
 
 
+@st.fragment(run_every=3)
+def patient_detail():
+    patients = load_patient_list()
+    if patients.empty:
+        st.info("No patient data yet.")
+        return
+
+    label_map = {
+        row.customer_id: f"{row.customer_id} — {row.name}" if row.name else row.customer_id
+        for row in patients.itertuples()
+    }
+    selected_id = st.selectbox(
+        "Select patient",
+        options=list(label_map.keys()),
+        format_func=lambda k: label_map[k],
+    )
+
+    df = load_patient_history(selected_id)
+    if df.empty:
+        st.warning("No readings for this patient.")
+        return
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("BPM over time")
+        chart_df = (
+            df[["timestamp", "heart_rate"]]
+            .sort_values("timestamp")
+            .set_index("timestamp")
+        )
+        st.line_chart(chart_df, y="heart_rate", height=300)
+
+    with col_right:
+        st.subheader("Reading status distribution")
+        dist = (
+            df["status"]
+            .value_counts()
+            .rename_axis("status")
+            .reset_index(name="count")
+            .set_index("status")
+        )
+        st.bar_chart(dist, height=300)
+
+
 # ── Render ──────────────────────────────────────────────────────────────────
 metrics()
 st.divider()
 charts()
+st.divider()
+st.subheader("Patient detail")
+patient_detail()
 st.divider()
 tables()

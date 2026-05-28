@@ -6,15 +6,16 @@ A real-time data pipeline that simulates, streams, processes, and visualizes cus
 
 ## Architecture
 
-```
-Data Generator → Kafka Producer → Kafka Topic → Kafka Consumer → PostgreSQL → Streamlit Dashboard
-```
+![Data Flow Diagram](docs/Data%20flow%20diagram.jpg)
 
-- **Data Generator** — simulates heart rate readings for 20 fake customers
-- **Kafka Producer** — streams readings to the `heartbeats` topic every second
-- **Kafka Consumer** — validates data, detects anomalies, and writes to PostgreSQL
-- **PostgreSQL** — stores all heartbeat records with timestamp indexing
-- **Streamlit Dashboard** — displays live metrics, charts, and anomaly alerts
+| Stage | Component | Description |
+|-------|-----------|-------------|
+| 1. Generate | Data Generator | Simulates heart rate readings for 20 fake customers |
+| 2. Produce | Kafka Producer | Streams readings to the `heartbeats` topic every second |
+| 3. Stream | Kafka Topic | Buffers messages in real time (KRaft, no ZooKeeper) |
+| 4. Consume | Kafka Consumer | Validates data, detects anomalies, writes to PostgreSQL |
+| 5. Store | PostgreSQL | Stores all heartbeat records with timestamp indexing |
+| 6. Visualise | Streamlit Dashboard | Displays live metrics, charts, and anomaly alerts |
 
 ---
 
@@ -185,6 +186,17 @@ Open your browser at the Network URL shown in the terminal (e.g. `http://172.28.
 - **Faker** — synthetic data generation
 - **Streamlit** — live dashboard
 - **Docker Compose** — local infrastructure
+
+---
+
+## Screenshots
+
+| View | Preview |
+|------|---------|
+| Heart rate over time | ![Heart rate](docs/Heart%20rate.jpg) |
+| Patient detail | ![Patient detail](docs/Patient%20detail.jpg) |
+| Records table | ![Records](docs/record.jpg) |
+| Summary stats | ![Summary](docs/summary.jpg) |
 
 ---
 
